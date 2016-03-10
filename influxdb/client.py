@@ -193,7 +193,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
         self._password = password
 
     def request(self, url, method='GET', params=None, data=None,
-                expected_response_code=200, headers=None):
+                expected_response_code=200, headers=None, retry_delay_sec=None):
         """Make a HTTP request to the InfluxDB API.
 
         :param url: the path of the HTTP request, e.g. write, query, etc.
@@ -243,7 +243,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                 break
             except requests.exceptions.ConnectionError as e:
                 if i < 2:
-                    continue
+                    if retry_delay_sec:
+                        time.sleep(retry_delay_sec)
                 else:
                     raise e
 
@@ -254,7 +255,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
         else:
             raise InfluxDBClientError(response.content, response.status_code)
 
-    def write(self, data, params=None, expected_response_code=204):
+    def write(self, data, params=None, expected_response_code=204, retry_delay_sec=None):
         """Write data to InfluxDB.
 
         :param data: the data to be written
@@ -282,7 +283,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
             params=params,
             data=make_lines(data, precision).encode('utf-8'),
             expected_response_code=expected_response_code,
-            headers=headers
+            headers=headers,
+            retry_delay_sec=retry_delay_sec
         )
         return True
 
@@ -292,7 +294,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
               epoch=None,
               expected_response_code=200,
               database=None,
-              raise_errors=True):
+              raise_errors=True,
+              retry_delay_sec=None):
         """Send a query to InfluxDB.
 
         :param query: the actual query string
@@ -329,7 +332,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
             method='GET',
             params=params,
             data=None,
-            expected_response_code=expected_response_code
+            expected_response_code=expected_response_code,
+            retry_delay_sec=retry_delay_sec
         )
 
         data = response.json()
@@ -353,6 +357,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                      retention_policy=None,
                      tags=None,
                      batch_size=None,
+                     retry_delay_sec=None,
                      ):
         """Write to multiple time series names.
 
@@ -388,14 +393,16 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                                    time_precision=time_precision,
                                    database=database,
                                    retention_policy=retention_policy,
-                                   tags=tags)
+                                   tags=tags,
+                                   retry_delay_sec=retry_delay_sec)
             return True
         else:
             return self._write_points(points=points,
                                       time_precision=time_precision,
                                       database=database,
                                       retention_policy=retention_policy,
-                                      tags=tags)
+                                      tags=tags,
+                                      retry_delay_sec=retry_delay_sec)
 
     def _batches(self, iterable, size):
         for i in xrange(0, len(iterable), size):
@@ -406,7 +413,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                       time_precision,
                       database,
                       retention_policy,
-                      tags):
+                      tags,
+                      retry_delay_sec):
         if time_precision not in ['n', 'u', 'ms', 's', 'm', 'h', None]:
             raise ValueError(
                 "Invalid time precision is given. "
@@ -440,7 +448,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
             self.write(
                 data=data,
                 params=params,
-                expected_response_code=204
+                expected_response_code=204,
+                retry_delay_sec=retry_delay_sec
             )
 
         return True
