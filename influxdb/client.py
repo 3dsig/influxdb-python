@@ -193,7 +193,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
         self._password = password
 
     def request(self, url, method='GET', params=None, data=None,
-                expected_response_code=200, headers=None, retry_delay_sec=None):
+                expected_response_code=200, headers=None, retries_sequence=None):
         """Make a HTTP request to the InfluxDB API.
 
         :param url: the path of the HTTP request, e.g. write, query, etc.
@@ -227,7 +227,8 @@ localhost:8086/databasename', timeout=5, udp_port=159)
 
         # Try to send the request a maximum of three times. (see #103)
         # TODO (aviau): Make this configurable.
-        for i in range(0, 3):
+        retries_sequence = retries_sequence or [0, 0, 0]
+        for i, delay in enumerate(retries_sequence):
             try:
                 response = self._session.request(
                     method=method,
@@ -242,11 +243,11 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                 )
                 break
             except requests.exceptions.ConnectionError as e:
-                if i < 2:
-                    if retry_delay_sec:
-                        time.sleep(retry_delay_sec)
-                else:
+                is_last = i == len(retries_sequence)
+                if is_last:
                     raise e
+                else:
+                    time.sleep(delay)
 
         if response.status_code >= 500 and response.status_code < 600:
             raise InfluxDBServerError(response.content)
@@ -255,7 +256,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
         else:
             raise InfluxDBClientError(response.content, response.status_code)
 
-    def write(self, data, params=None, expected_response_code=204, retry_delay_sec=None):
+    def write(self, data, params=None, expected_response_code=204, retries_sequence=None):
         """Write data to InfluxDB.
 
         :param data: the data to be written
@@ -284,7 +285,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
             data=make_lines(data, precision).encode('utf-8'),
             expected_response_code=expected_response_code,
             headers=headers,
-            retry_delay_sec=retry_delay_sec
+            retries_sequence=retries_sequence
         )
         return True
 
@@ -295,7 +296,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
               expected_response_code=200,
               database=None,
               raise_errors=True,
-              retry_delay_sec=None):
+              retries_sequence=None):
         """Send a query to InfluxDB.
 
         :param query: the actual query string
@@ -333,7 +334,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
             params=params,
             data=None,
             expected_response_code=expected_response_code,
-            retry_delay_sec=retry_delay_sec
+            retries_sequence=retries_sequence
         )
 
         data = response.json()
@@ -357,7 +358,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                      retention_policy=None,
                      tags=None,
                      batch_size=None,
-                     retry_delay_sec=None,
+                     retries_sequence=None,
                      ):
         """Write to multiple time series names.
 
@@ -394,7 +395,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                                    database=database,
                                    retention_policy=retention_policy,
                                    tags=tags,
-                                   retry_delay_sec=retry_delay_sec)
+                                   retries_sequence=retries_sequence)
             return True
         else:
             return self._write_points(points=points,
@@ -402,7 +403,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                                       database=database,
                                       retention_policy=retention_policy,
                                       tags=tags,
-                                      retry_delay_sec=retry_delay_sec)
+                                      retries_sequence=retries_sequence)
 
     def _batches(self, iterable, size):
         for i in xrange(0, len(iterable), size):
@@ -414,7 +415,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                       database,
                       retention_policy,
                       tags,
-                      retry_delay_sec):
+                      retries_sequence):
         if time_precision not in ['n', 'u', 'ms', 's', 'm', 'h', None]:
             raise ValueError(
                 "Invalid time precision is given. "
@@ -449,7 +450,7 @@ localhost:8086/databasename', timeout=5, udp_port=159)
                 data=data,
                 params=params,
                 expected_response_code=204,
-                retry_delay_sec=retry_delay_sec
+                retries_sequence=retries_sequence
             )
 
         return True
